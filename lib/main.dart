@@ -1,196 +1,205 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
-void main() {
-  runApp(MyApp());
-}
+void main() => runApp(MyApp());
 
 class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'To-Do List App',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-      ),
-      home: ToDoListScreen(),
+      title: "Stopwatch",
+      home: Stopwatch(),
     );
   }
 }
 
-class ToDoListScreen extends StatefulWidget {
+class Stopwatch extends StatefulWidget {
+  const Stopwatch({Key? key}) : super(key: key);
   @override
-  _ToDoListScreenState createState() => _ToDoListScreenState();
+  State createState() => _StopwatchState();
 }
 
-class _ToDoListScreenState extends State<ToDoListScreen> {
-  List<Task> tasks = [];
+class _StopwatchState extends State<Stopwatch> {
+  int milliseconds = 0;
+  Timer? timer;
+  final laps = <int>[];
+  final itemHeight = 50.0;
+  final scrollController = ScrollController();
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: PreferredSize(
-        preferredSize: Size.fromHeight(kToolbarHeight),
-        child: Container(
-          color: Colors.blue, // Set background color
-          child: AppBar(
-            title:
-                Text('To Do List App', style: TextStyle(color: Colors.white)),
-            centerTitle: true, // Center the title
-            backgroundColor: Colors.transparent, // Make app bar transparent
-            elevation: 0, // Remove app bar shadow
-          ),
-        ),
-      ),
-      body: ListView.builder(
-        itemCount: tasks.length,
-        itemBuilder: (context, index) {
-          return ListTile(
-            leading: Checkbox(
-              value: tasks[index].isCompleted,
-              onChanged: (bool? value) {
-                setState(() {
-                  tasks[index].isCompleted = value ?? false;
-                });
-              },
-            ),
-            title: Text(
-              tasks[index].task,
-              style: TextStyle(
-                decoration: tasks[index].isCompleted
-                    ? TextDecoration.lineThrough
-                    : null,
-              ),
-            ),
-            trailing: IconButton(
-              icon: Icon(Icons.delete),
-              onPressed: () {
-                _showDeleteConfirmationDialog(index);
-              },
-            ),
-          );
-        },
-      ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: Colors.blue,
-        onPressed: () {
-          _navigateToAddTaskScreen(context);
-        },
-        child: Icon(Icons.add, color: Colors.white),
-        shape: CircleBorder(),
-      ),
-    );
+  void _onTick(Timer timer) {
+    setState(() {
+      milliseconds += 100;
+    });
   }
 
-  void _navigateToAddTaskScreen(BuildContext context) async {
-    final newTask = await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => AddTaskScreen()),
-    );
+  @override
+  void dispose() {
+    timer?.cancel();
+    super.dispose();
+  }
 
-    if (newTask != null) {
-      setState(() {
-        tasks.add(Task(task: newTask));
-      });
+  void startTimer() {
+    // Prevent multiple timers from being created
+    if (timer == null || !timer!.isActive) {
+      timer = Timer.periodic(Duration(milliseconds: 100), _onTick);
     }
   }
 
-  void _showDeleteConfirmationDialog(int index) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text("Confirm Delete"),
-          content: Text("Are you sure you want to delete this task?"),
-          actions: <Widget>[
-            TextButton(
-              child: Text("Cancel"),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
+  void stopTimer(BuildContext context) {
+    timer?.cancel();
+    final controller =
+        showBottomSheet(context: context, builder: _buildRunCompleteSheet);
+    Future.delayed(Duration(seconds: 5)).then((_) {
+      controller.close();
+    });
+  }
+
+  void resetTimer() {
+    // stopTimer();
+    laps.clear();
+    setState(() {
+      milliseconds = 0;
+    });
+  }
+
+  Widget _buildRunCompleteSheet(BuildContext context) {
+    final totalRuntime = laps.fold(milliseconds, (total, lap) => total + lap);
+    final textTheme = Theme.of(context).textTheme;
+    return SafeArea(
+        child: Container(
+      color: Colors.black.withOpacity(0.8),
+      width: double.infinity,
+      child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10.0),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text('Run Finished!',
+                style: textTheme.headlineSmall?.copyWith(color: Colors.white)),
+            Text(
+              "Total Run Time is ${_secondsText(totalRuntime)}.",
+              style: TextStyle(color: Colors.white),
             ),
-            TextButton(
-              child: Text("Delete"),
-              onPressed: () {
-                setState(() {
-                  tasks.removeAt(index);
-                });
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text("Task deleted"),
-                    duration: Duration(seconds: 2),
-                  ),
-                );
-                Navigator.of(context).pop();
-              },
-            ),
-          ],
-        );
-      },
+          ])),
+    ));
+  }
+
+  void _lap() {
+    if (milliseconds == 0) return;
+    setState(() {
+      laps.add(milliseconds);
+      milliseconds = 0;
+    });
+    scrollController.animateTo(
+      itemHeight * laps.length,
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeIn,
     );
   }
-}
 
-class AddTaskScreen extends StatefulWidget {
-  @override
-  _AddTaskScreenState createState() => _AddTaskScreenState();
-}
+  String _secondsText(int milliseconds) {
+    final seconds = milliseconds / 1000;
+    return '${seconds.toStringAsFixed(1)} seconds';
+  }
 
-class _AddTaskScreenState extends State<AddTaskScreen> {
-  TextEditingController _taskController = TextEditingController();
+  Widget _buildLapDisplay() {
+    return Scrollbar(
+        child: ListView.builder(
+      controller: scrollController,
+      itemExtent: itemHeight,
+      itemCount: laps.length,
+      itemBuilder: (context, index) {
+        final milliseconds = laps[index];
+        return ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 50),
+          title: Text('Lap ${index + 1}'),
+          trailing: Text(_secondsText(milliseconds)),
+        );
+      },
+    ));
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Add Task'),
+        title: const Text("Stopwatch"),
       ),
-      body: Padding(
-        padding: EdgeInsets.all(20.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              controller: _taskController,
-              decoration: InputDecoration(labelText: 'Task'),
-            ),
-            SizedBox(height: 20.0),
-            ElevatedButton(
-              onPressed: () {
-                _addTask();
-              },
-              style: ElevatedButton.styleFrom(
-                primary: Colors.blue, // Set button color to blue
+      body: Column(
+        children: <Widget>[
+          Expanded(
+            flex: 0, // This makes the container take up only required space
+            child: Container(
+              width: double.infinity, // Forces container to fill the width
+              color: Theme.of(context).primaryColor,
+              padding: const EdgeInsets.symmetric(
+                  vertical: 20), // Adjusts the vertical padding
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  Text(
+                    'Lap ${laps.length + 1}',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(color: Colors.white),
+                  ),
+                  Text(
+                    _secondsText(milliseconds),
+                    style: Theme.of(context)
+                        .textTheme
+                        .headlineSmall
+                        ?.copyWith(color: Colors.white),
+                  ),
+                  const SizedBox(
+                      height: 20), // Adds space between the text and buttons
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                        ),
+                        onPressed: startTimer,
+                        child: const Text(
+                          'Start',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                      ),
+                      Builder(
+                        builder: (context) => ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                          ),
+                          onPressed: () => stopTimer(context),
+                          child: const Text(
+                            'Stop',
+                            style: TextStyle(color: Colors.white),
+                          ),
+                        ),
+                      ),
+                      ElevatedButton(
+                        onPressed: resetTimer,
+                        child: const Text('Reset'),
+                      ),
+                      ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.amber,
+                          ),
+                          onPressed: _lap,
+                          child: const Text(
+                            'Lap',
+                            style: TextStyle(color: Colors.white),
+                          )),
+                    ],
+                  ),
+                ],
               ),
-              child: Text(
-                'Add',
-                style: TextStyle(color: Colors.white),
-              ),
             ),
-          ],
-        ),
+          ),
+          Expanded(
+            child: _buildLapDisplay(),
+          ),
+        ],
       ),
     );
   }
-
-  void _addTask() {
-    String task = _taskController.text.trim();
-    if (task.isNotEmpty) {
-      Navigator.pop(context, task);
-    } else {
-      // Show some error message if task is empty
-    }
-  }
-
-  @override
-  void dispose() {
-    _taskController.dispose();
-    super.dispose();
-  }
-}
-
-class Task {
-  String task;
-  bool isCompleted;
-
-  Task({required this.task, this.isCompleted = false});
 }
